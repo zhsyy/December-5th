@@ -122,7 +122,7 @@ DDL：December 5th
 		- start函数在后台开始一个抓包的程序
 		- stop函数停止抓包
 		- analyze函数用tshark输出一个csv文件，包含了TCP包的头信息
-	- tcp.lua：Wireshark[插件](https://mika-s.github.io/wireshark/lua/dissector/2017/ 11/04/creating-a-wireshark-dissector-in-lua-1.html)，以便tshark可以解析我们自定义的cmu格式
+	- tcp.lua：Wireshark[插件](https://mika-s.github.io/wireshark/lua/dissector/2017/11/04/creating-a-wireshark-dissector-in-lua-1.html)，以便tshark可以解析我们自定义的cmu格式
 	- capture_packets.sh现实了我们如何将此文件传给tshark来解析数据包，要将插件与计算机上的Wireshark GUI一起使用，请将此文件添加到Wireshark的[插件文件夹](https://www.wireshark.org/docs/wsug_html_chunked/ChPluginFolders.)中。
 
 ### (4) pytest测试

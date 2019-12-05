@@ -78,7 +78,7 @@ DDL：December 5th
 2. **快速恢复**,TCP状态机如何进行拥塞控制
 
 #### Implement
-1. 准备：理解TCP拥塞控制的[状态机](https://intronetworks.cs.luc.edu/current/html/reno.html# tcp-reno-and-congestion-management)
+1. 准备：理解TCP拥塞控制的[状态机](https://intronetworks.cs.luc.edu/current/html/reno.html#tcp-reno-and-congestion-management)
 2. 加入cwnd保持应用的缓冲数据总数
 3. **慢启动和拥塞控制**，类似TCP Tahoe
 4. **快速恢复**：TCP Tahoe-->**TCP Reno**
@@ -122,7 +122,7 @@ DDL：December 5th
 		- start函数在后台开始一个抓包的程序
 		- stop函数停止抓包
 		- analyze函数用tshark输出一个csv文件，包含了TCP包的头信息
-	- tcp.lua：Wireshark[插件](https://mika-s.github.io/wireshark/lua/dissector/2017/ 11/04/creating-a-wireshark-dissector-in-lua-1.html)，以便tshark可以解析我们自定义的cmu格式
+	- tcp.lua：Wireshark[插件](https://mika-s.github.io/wireshark/lua/dissector/2017/11/04/creating-a-wireshark-dissector-in-lua-1.html)，以便tshark可以解析我们自定义的cmu格式
 	- capture_packets.sh现实了我们如何将此文件传给tshark来解析数据包，要将插件与计算机上的Wireshark GUI一起使用，请将此文件添加到Wireshark的[插件文件夹](https://www.wireshark.org/docs/wsug_html_chunked/ChPluginFolders.)中。
 
 ### (4) pytest测试
@@ -141,13 +141,13 @@ DDL：December 5th
 	- 传输完成，停止抓包：`vagrant@server:/vagrant/project-1$ utils/capture_packets.sh stop submit.pcap`
 
 ## 6. 提交：
-•	**Makefile**: Make sure all the variables and paths are set correctly such that your program compiles in the hand-in directory. Running make test should run your testing code. 
-•	All of your **source code files and test files**. (files ending in .c, .h, etc. only, no .o files and no executables) 
-•	**readme.txt**: File containing a thorough description of your design and implementation. If you use any additional packet headers, please document them here. 
-•	**tests.txt**: File containing documentation of your test cases and any known issues you have. 
-•	**submit.pcap**: Your PCAP submission file from running the functionality code in server.c and client.c from the starter code (for a larger file transfer). 
-•	**graph.pdf**: Your graph of the currently unacked packets in flight vs time computed from submit.pcap. 
-•	**design.pdf**: Reflect the overall design of your project and show the function of each code module and interface.
+- **Makefile**: Make sure all the variables and paths are set correctly such that your program compiles in the hand-in directory. Running make test should run your testing code. 
+- All of your **source code files and test files**. (files ending in .c, .h, etc. only, no .o files and no executables)
+- **readme.txt**: File containing a thorough description of your design and implementation. If you use any additional packet headers, please document them here. 
+- **tests.txt**: File containing documentation of your test cases and any known issues you have. 
+- **submit.pcap**: Your PCAP submission file from running the functionality code in server.c and client.c from the starter code (for a larger file transfer). 
+- **graph.pdf**: Your graph of the currently unacked packets in flight vs time computed from submit.pcap. 
+- **design.pdf**: Reflect the overall design of your project and show the function of each code module and interface.
 
 ## 7. 总评：
 1. 代码

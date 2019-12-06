@@ -27,7 +27,7 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
   dst->their_port = port;
   dst->socket = sockfd;
   dst->received_buf = NULL;
-  dst->received_len = 0;
+  dst->window.recv_length = 0;
   pthread_mutex_init(&(dst->recv_lock), NULL);
   dst->sending_buf = NULL;
   dst->sending_len = 0;
@@ -140,7 +140,7 @@ int cmu_close(cmu_socket_t * sock){
 int cmu_read(cmu_socket_t * sock, char* dst, int length, int flags){
   char* new_buf;
   int read_len = 0;
-
+    struct sent_pkt *pkts, *nexts;
   if(length < 0){
     perror("ERROR negative length");
     return EXIT_ERROR;
@@ -150,31 +150,34 @@ int cmu_read(cmu_socket_t * sock, char* dst, int length, int flags){
 
   switch(flags){
     case NO_FLAG:
-      while(sock->received_len == 0){
+      while(sock->window.recv_length == 0){
         pthread_cond_wait(&(sock->wait_cond), &(sock->recv_lock)); 
       }
     case NO_WAIT:
-      if(sock->received_len > 0){
-        if(sock->received_len > length)
-          read_len = length;
-        else
-          read_len = sock->received_len;
-
-        memcpy(dst, sock->received_buf, read_len);
-        if(read_len < sock->received_len){
-           new_buf = malloc(sock->received_len - read_len);
-           memcpy(new_buf, sock->received_buf + read_len, 
-            sock->received_len - read_len);
-           free(sock->received_buf);
-           sock->received_len -= read_len;
-           sock->received_buf = new_buf;
-        }
-        else{
-          free(sock->received_buf);
-          sock->received_buf = NULL;
-          sock->received_len = 0;
-        }
-      }
+        *pkts = sock->window.sent_head;
+          while((nexts = pkts->next) != NULL && read_len < length){/* 还需要继续读，并且有数据可读 */
+              if(length - read_len >= nexts.data_length && nexts.adjacent){/* 剩余要读的内容大于下一个recv_pkt的长度，并且该recv_pkt是能够直接读的，直接把整个pkt中的内容取出 */
+                  memcpy(dst + read_len, nexts->data_start, nexts.data_length);
+                  read_len += nexts.data_length;
+                  sock->window.recv_length -= nexts.data_length;
+                  pkts->next = nexts->next;
+                  free(nexts->data_start);
+                  free(nexts);
+              } else if(length - read_len < nexts.data_length && nexts.adjacent){/* 剩余要读的内容小于等于recv_pkt的长度，并且该recv_pkt是能够直接读的，只在recv_pkt中取出部分 */
+                  memcpy(dst + read_len, nexts->data_start, length - read_len);
+                  new_buf = malloc(nexts.data_length - (length - read_len));//剩余的长度
+                  memcpy(new_buf, nexts->data_start + (length - read_len), nexts.data_length - (length - read_len));
+                  free(nexts->data_start);
+                  nexts->data_start = new_buf;
+                  nexts->seq += length - read_len;
+                  nexts->data_length -= length - read_len;
+                  sock->window.recv_length -= length - read_len;
+                  read_len = length;
+              } else{
+                  //读到一个不能读的recv_pkt,什么也不做,跳出while循环
+                  break;
+              }
+          }
       break;
     default:
       perror("ERROR Unknown flag.\n");

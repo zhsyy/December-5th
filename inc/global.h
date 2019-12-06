@@ -30,7 +30,10 @@ typedef struct {
 	pthread_mutex_t recv_lock; /* TCP收到数据，放进去；cmu_read读数据 */
 	uint32_t rwnd; /* 流量控制 */
 	uint32_t cwnd; /* 拥塞控制 */
+    uint32_t rtt; /* RTT */
+    uint32_t ssthresh; /* ssthresh */
 	bool timer_on; /* 计时器是否设置 */
+    enum control_status con_state;/* 用于拥塞控制算法表示状态 */
 	 /* TimeoutInterval */
 }slide_window_t;
 
@@ -73,14 +76,18 @@ typedef enum {
 	LAST_ACK /* 10 */
 }states;
 
+typedef enum {
+    SLOW_STAR, /* 0 */
+    CONG_AVOI, /* 1 */
+    FAST_RECO  /* 2 */
+}control_status;
+
 typedef struct {
 	int socket;   
 	pthread_t thread_id;
 	uint16_t my_port;
 	uint16_t their_port;
 	struct sockaddr_in conn;
-	char* received_buf;
-	int received_len;
 	pthread_mutex_t recv_lock;
 	pthread_cond_t wait_cond;
 	char* sending_buf;
@@ -93,6 +100,8 @@ typedef struct {
 	enum states state;
 	uint32_t ISN;
 	uint32_t FSN;
+    int ack_dup;/* ack重复的数目 用于切换到快速重传 */
+
 } cmu_socket_t;
 
 #endif

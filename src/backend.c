@@ -4,6 +4,58 @@
 #define min(a, b) ((a) > (b) ? (b) : (a))
 #define min3(A,B,C) ((A)>(B)?(B):(A))>C?C:((A)>(B)?(B):(A))
 
+
+void handle_ack(cmu_socket_t * sock, char * pkt){
+  sock->window.rwnd = get_advertised_window(pkt);
+  if(get_ack(pkt) > sock->window.last_ack_received){
+    sock->ack_dup = 0;
+    switch(sock->window.con_state){
+      case SLOW_STAR: /* 慢启动 */
+        sock->window.cwnd += MAX_DLEN;
+        if(sock->window.cwnd >= sock->window.ssthresh) /* 当cwnd≥ssthresh，需要进入拥塞避免状态 */
+          sock->window.con_state = CONG_AVOI;
+          break;
+      case CONG_AVOI: /* 拥塞避免状态 */
+        sock->window.cwnd += MAX_DLEN * MAX_DLEN/sock->window.cwnd; /* TODO：公式写错，需要乘MSS */
+        break;
+      case FAST_RECO: /* 快速恢复 */
+        sock->window.cwnd = sock->window.ssthresh;
+        sock->window.con_state = CONG_AVOI;
+        break;
+      default:
+        perror("ERROR unknown flag");
+        return;
+    }               
+    sock->window.last_ack_received = get_ack(pkt);
+    sock->window.rwnd = get_advertised_window(pkt);
+    pkts = sock->window.sent_head;
+    while((nexts = pkts->next) != NULL && get_seq(nexts->pkt_start) < get_ack(pkt)){
+      pkts->next = nexts->next;
+      sock->window.sent_length -= (get_plen(nexts->pkt_start) - get_hlen(nexts->pkt_start));/* 每释放一个缓存pkt需要将sent_length减小 */
+      free(nexts->pkt_start);
+      free(nexts);
+    }
+    // sock->window.sent_head->next = nexts;
+  } else if(get_ack(pkt) == sock->window.last_ack_received){
+      sock->ack_dup += 1; /* TODO：考虑收到的是之前的ACK，与目前记录的重复ACK并不是同一个，需要加上判断 */
+      if(sock->window.con_state == FAST_RECO){
+        sock->window.cwnd += MAX_DLEN;/* 如果已经处于快速恢复状态，则加上一个mss */
+      }
+      if(sock->ack_dup == 3){
+        /* 立即快速重传，并进入快速恢复状态 */
+        if(sock->window.con_state != FAST_RECO){
+          sock->window.ssthresh = sock->window.cwnd / 2;
+          sock->window.cwnd = sock->window.ssthresh + 3 * MAX_DLEN;
+          sock->window.con_state = FAST_RECO;
+        }
+        pkts = sock->window.sent_head;
+        nexts = pkts->next;
+        sendto(sockfd, nexts->pkt_start, plen, 0, (struct sockaddr*) &(sock->conn), conn_len);/* 快速重传一定是传缓存链表的第一个包，此处主要看看语法对不对 */
+        sock->ack_dup = 0;
+      }
+  }
+}
+
 /*
  * Param: sock - The socket used for handling packets received
  * Param: pkt - The packet data received by the socket
@@ -24,49 +76,7 @@ void handle_message(cmu_socket_t * sock, char * pkt){
     bool contins;
     switch(flags){
         case ACK_FLAG_MASK:
-            sock->window.rwnd = get_advertised_window(pkt);
-            if(get_ack(pkt) > sock->window.last_ack_received){
-                sock->ack_dup = 0;
-                if (sock->window.con_state == SLOW_STAR) {
-                    sock->window.cwnd += MAX_DLEN;
-                    if(sock->window.cwnd >= sock->window.ssthresh)
-                        sock->window.con_state = CONG_AVOI;
-                }
-                else if(sock->window.con_state == CONG_AVOI)
-                    sock->window.cwnd += MAX_DLEN/sock->window.cwnd;
-                else {
-                    sock->window.cwnd = sock->window.ssthresh;
-                    sock->window.con_state = CONG_AVOI;
-                }
-                sock->window.last_ack_received = get_ack(pkt);
-                sock->window.rwnd = get_advertised_window(pkt);
-                *pkts = sock->window.sent_head;
-                while((nexts = pkts->next) != NULL && get_seq(nexts->pkt_start) < get_ack(pkt)){
-                    pkts->next = nexts->next;
-                    sock->window.sent_length -= (get_plen(nexts->pkt_start) - get_hlen(nexts->pkt_start));/* 每释放一个缓存pkt需要将sent_length减小 */
-                    free(nexts->pkt_start);
-                    free(nexts);
-                }
-                sock->window.sent_head->next = nexts;
-            } else{
-                sock->ack_dup += 1;
-                if(sock->window.con_state == FAST_RECO){
-                    sock->window.cwnd += MAX_DLEN;/* 如果已经处于快速恢复状态，则加上一个mss */
-                }
-                if(sock->ack_dup == 3){
-                    /* 立即快速重传，并进入快速恢复状态 */
-                    if(sock->window.con_state != FAST_RECO){
-                        sock->window.ssthresh = sock->window.cwnd / 2;
-                        sock->window.cwnd = sock->window.ssthresh + 3*MAX_DLEN;
-                        sock->window.con_state = FAST_RECO;
-                    }
-
-                    *pkts = sock->window.sent_head;
-                    *nexts = pkts->next;
-                    sendto(sockfd, nexts->pkt_start, plen, 0, (struct sockaddr*) &(sock->conn), conn_len);/* 快速重传一定是传缓存链表的第一个包，此处主要看看语法对不对 */
-                    sock->ack_dup = 0;
-                }
-            }
+            void handle_ack(sock,pkt);
             break;
         case ACK_FLAG_MASK | SYN_FLAG_MASK:
             break;
@@ -164,7 +174,7 @@ void single_send(cmu_socket_t * sock, char* data, int buf_len){
         while(buf_len != 0){
             window_size = min(sock->window.cwnd, sock->window.rwnd);
             seq = sock->window.last_ack_received + sock->window.sent_length;
-            uint32_t sent_len = min3(window_size-sock->window.sent_length, MAX_DLEN, buf_len);/* 按上次讨论的结果，window_size要减去sent_length */
+            uint32_t sent_len = min3(window_size_sock->window.sent_length, MAX_DLEN, buf_len);/* 按上次讨论的结果，window_size要减去sent_length */
             if(sent_len == 0)
                 sent_len = 1;
             plen = DEFAULT_HEADER_LEN + sent_len;
@@ -181,7 +191,7 @@ void single_send(cmu_socket_t * sock, char* data, int buf_len){
             pkt_store->pkt_start = msg;/* msg和sent_time要记得在收到ack以后把它free掉 */
             pkt_store->sent_time = sent_time;
 
-            *pkts = sock->window.sent_head;
+            pkts = sock->window.sent_head;
             while((nexts = pkts->next) != NULL){/* 此处为了找到发送缓存队列最后一个包的位置,pkts是最后一个包 */
                 pkts = nexts;
             }
@@ -252,6 +262,7 @@ void check_for_data(cmu_socket_t * sock, int flags){
                 break;
             default:
                 perror("ERROR unknown flag");
+                return;
         }
         if(len >= DEFAULT_HEADER_LEN){//收到一个以上的包，但不知道是ack包还是数据包,在handle里判断
             plen = get_plen(hdr);
@@ -372,10 +383,6 @@ void send_SYN(cmu_socket_t *dst){
         dst->window.last_ack_received = ISN;
         pthread_mutex_unlock(&(dst->window.ack_lock));
 
-#ifdef DEBUG
-        printf("ISN = %d\n", ISN);
-#endif
-
     }else{
         ISN = dst->ISN;
     }
@@ -408,12 +415,6 @@ void send_SYNACK(cmu_socket_t *dst){
             &(dst->conn), sizeof(dst->conn));
     free(pkt);
 
-#ifdef DEBUG
-    printf("ISN = %d\n", ISN);
-  printf("last_seq_received = %d\n", dst->window.last_seq_received);
-  printf("SYN ACK sent\n");
-#endif
-
     return;
 }
 
@@ -428,11 +429,6 @@ void send_ACK(cmu_socket_t *dst){
     sendto(dst->socket, pkt, DEFAULT_HEADER_LEN, 0, (struct sockaddr*)
             &(dst->conn), sizeof(dst->conn));
     free(pkt);
-#ifdef DEBUG
-    printf("last_seq_received = %d\n", dst->window.last_seq_received);
-  printf("last_ack_received = %d\n", dst->window.last_ack_received);
-  printf("ack sent\n");
-#endif
     return;
 }
 
@@ -462,10 +458,6 @@ void handshake(cmu_socket_t *dst){
                 break;
             case SYN_RECVD:
                 check_for_data(dst, TIMEOUT);
-#ifdef DEBUG
-            printf("dst->ISN = %d\n", dst->ISN);
-  printf("dst->window.last_ack_received = %d\n", dst->window.last_ack_received);
-#endif
                 if(check_ack(dst, dst->ISN)){ // 接收ACK，不发送
                     dst->state = ESTABLISHED;
                 } else{
@@ -493,11 +485,6 @@ void send_FIN(cmu_socket_t *dst){
     sendto(dst->socket, pkt, DEFAULT_HEADER_LEN, 0, (struct sockaddr*)
             &(dst->conn), sizeof(dst->conn));
     free(pkt);
-#ifdef DEBUG
-    printf("last_seq_received = %d\n", dst->window.last_seq_received);
-  printf("last_ack_received = %d\n", dst->window.last_ack_received);
-  printf("ack sent\n");
-#endif
     return;
 }
 
